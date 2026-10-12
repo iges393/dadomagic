@@ -3,77 +3,93 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Conector Dado Mágico</title>
+    <title>Controlador Secreto</title>
     <style>
-        body { font-family: Arial, sans-serif; text-align: center; background: #111; color: #fff; padding-top: 50px; }
-        button { padding: 15px 30px; font-size: 18px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
-        #resultado { font-size: 80px; margin-top: 40px; font-weight: bold; color: #00ffcc; }
+        /* Fondo completamente negro e invisible por si alguien ve de reojo tu teléfono */
+        body { font-family: Arial, sans-serif; text-align: center; background: #000; color: #111; padding-top: 100px; }
+        button { padding: 15px 30px; font-size: 16px; background: #111; color: #222; border: 1px solid #222; border-radius: 5px; cursor: pointer; }
+        #resultado { font-size: 20px; margin-top: 40px; color: #111; }
     </style>
 </head>
 <body>
 
-    <h1>Dado de Transmisión Secreta</h1>
-    <!-- En Web Bluetooth, la conexión DEBE arrancar obligatoriamente con el click de un botón por seguridad -->
-    <button onclick="conectarDado()">Conectar con el Dado</button>
-    
+    <button onclick="conectarDado()">Sincronizar Dispositivo</button>
     <div id="resultado">--</div>
 
     <script>
-        // Usamos exactamente los mismos UUIDs que le inyectamos a tu ESP32-C3
         const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
         const CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+        
+        let bluetoothDevice = null;
 
         async function conectarDado() {
             try {
-                document.getElementById('resultado').innerText = "Buscando...";
-                
-                // 1. Solicita buscar el dispositivo Bluetooth
-                const device = await navigator.bluetooth.requestDevice({
+                // Solicita el emparejamiento manual requerido por seguridad de Chrome
+                bluetoothDevice = await navigator.bluetooth.requestDevice({
                     filters: [{ name: 'DadoMagicov2' }],
                     optionalServices: [SERVICE_UUID]
                 });
 
-                // 2. Se conecta al servidor GATT del ESP32-C3
-                const server = await device.gatt.connect();
-                const service = await server.getPrimaryService(SERVICE_UUID);
-                const characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+                // Escucha si el dado se desconecta (por ejemplo, al entrar en Deep Sleep)
+                bluetoothDevice.addEventListener('gattserverdisconnected', onDisconnected);
 
-                document.getElementById('resultado').innerText = "¡Conectado!";
-
-                // 3. Activa las notificaciones automáticas (las flechitas automáticas que vimos en nRF)
-                await characteristic.startNotifications();
-                
-                // 4. Escucha cuando el dado envíe una nueva cara
-                characteristic.addEventListener('characteristicvaluechanged', (event) => {
-                    let value = event.target.value;
-                    let caraDetectada = value.getUint8(0); // Lee el número enviado (1 al 6)
-                    
-                    // Muestra el número en pantalla (puedes borrar esto para que la pantalla se quede en negro)
-                    document.getElementById('resultado').innerText = caraDetectada;
-                    
-                    // 5. El Truco de Magia: Vibraciones consecutivas ocultas
-                    hacerVibrarCelular(caraDetectada);
-                });
+                await iniciarConexionGATT();
 
             } catch (error) {
-                alert("Error de conexión: " + error);
-                document.getElementById('resultado').innerText = "Error";
+                alert("Error: " + error);
             }
         }
 
-        // Función para espaciar las vibraciones según el número de la cara
-        function hacerVibrarCelular(veces) {
-            if (!("vibrate" in navigator)) return; // Valida si el celular soporta vibración
+        async function iniciarConexionGATT() {
+            if (!bluetoothDevice) return;
+            
+            try {
+                const server = await bluetoothDevice.gatt.connect();
+                const service = await server.getPrimaryService(SERVICE_UUID);
+                const characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
 
-            let patronVibracion = [];
-            for (let i = 0; i < veces; i++) {
-                patronVibracion.push(200); // Vibra durante 200 milisegundos
-                if (i < veces - 1) {
-                    patronVibracion.push(250); // Pausa de 250 milisegundos entre vibraciones
+                await characteristic.startNotifications();
+                
+                characteristic.addEventListener('characteristicvaluechanged', (event) => {
+                    let value = event.target.value;
+                    let caraDetectada = value.getUint8(0);
+                    
+                    // EJECUTA EL TRUCO: Doble patrón de vibración consecutiva
+                    ejecutarDoblePatron(caraDetectada);
+                });
+
+                console.log("Dado Vinculado Exitosamente.");
+            } catch (error) {
+                console.log("Fallo en la conexión GATT: " + error);
+            }
+        }
+
+        // RECONEXIÓN AUTOMÁTICA: Si el dado se durmió y lo despiertas con el Doble Toque,
+        // la web se vuelve a amarrar sola en tu bolsillo sin tocar la pantalla.
+        function onDisconnected() {
+            console.log("El dado se ha dormido. Intentando reconexión automática de fondo...");
+            setTimeout(function() {
+                iniciarConexionGATT();
+            }, 2000); // Intenta reengancharse cada 2 segundos de forma silenciosa
+        }
+
+        // LÓGICA DEL TRUCO: Genera el patrón, hace una pausa larga, y lo repite una segunda vez
+        function ejecutarDoblePatron(cara) {
+            if (!("vibrate" in navigator)) return;
+
+            let patronIndividual = [];
+            for (let i = 0; i < cara; i++) {
+                patronIndividual.push(200); // Vibra 200ms
+                if (i < cara - 1) {
+                    patronIndividual.push(250); // Pausa corta de 250ms entre pulsos
                 }
             }
-            // Ejecuta el patrón en el motor del teléfono (Ej: Cara 3 = Vibra, Pausa, Vibra, Pausa, Vibra)
-            navigator.vibrate(patronVibracion);
+
+            // Unimos el patrón dos veces separándolo por una pausa larga de 1.2 segundos (1200ms)
+            // Ejemplo Cara 2: [200, 250, 200] + [1200] + [200, 250, 200]
+            let patronCompleto = [...patronIndividual, 1200, ...patronIndividual];
+            
+            navigator.vibrate(patronCompleto);
         }
     </script>
 </body>
