@@ -1,0 +1,80 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conector Dado Mágico</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; background: #111; color: #fff; padding-top: 50px; }
+        button { padding: 15px 30px; font-size: 18px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        #resultado { font-size: 80px; margin-top: 40px; font-weight: bold; color: #00ffcc; }
+    </style>
+</head>
+<body>
+
+    <h1>Dado de Transmisión Secreta</h1>
+    <!-- En Web Bluetooth, la conexión DEBE arrancar obligatoriamente con el click de un botón por seguridad -->
+    <button onclick="conectarDado()">Conectar con el Dado</button>
+    
+    <div id="resultado">--</div>
+
+    <script>
+        // Usamos exactamente los mismos UUIDs que le inyectamos a tu ESP32-C3
+        const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+        const CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+
+        async function conectarDado() {
+            try {
+                document.getElementById('resultado').innerText = "Buscando...";
+                
+                // 1. Solicita buscar el dispositivo Bluetooth
+                const device = await navigator.bluetooth.requestDevice({
+                    filters: [{ name: 'DadoMagico' }],
+                    optionalServices: [SERVICE_UUID]
+                });
+
+                // 2. Se conecta al servidor GATT del ESP32-C3
+                const server = await device.gatt.connect();
+                const service = await server.getPrimaryService(SERVICE_UUID);
+                const characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+
+                document.getElementById('resultado').innerText = "¡Conectado!";
+
+                // 3. Activa las notificaciones automáticas (las flechitas automáticas que vimos en nRF)
+                await characteristic.startNotifications();
+                
+                // 4. Escucha cuando el dado envíe una nueva cara
+                characteristic.addEventListener('characteristicvaluechanged', (event) => {
+                    let value = event.target.value;
+                    let caraDetectada = value.getUint8(0); // Lee el número enviado (1 al 6)
+                    
+                    // Muestra el número en pantalla (puedes borrar esto para que la pantalla se quede en negro)
+                    document.getElementById('resultado').innerText = caraDetectada;
+                    
+                    // 5. El Truco de Magia: Vibraciones consecutivas ocultas
+                    hacerVibrarCelular(caraDetectada);
+                });
+
+            } catch (error) {
+                console.log("Error de conexión: " + error);
+                document.getElementById('resultado').innerText = "Error";
+            }
+        }
+
+        // Función para espaciar las vibraciones según el número de la cara
+        function hacerVibrarCelular(veces) {
+            if (!("vibrate" in navigator)) return; // Valida si el celular soporta vibración
+
+            let patronVibracion = [];
+            for (let i = 0; i < veces; i++) {
+                patronVibracion.push(200); // Vibra durante 200 milisegundos
+                if (i < veces - 1) {
+                    patronVibracion.push(250); // Pausa de 250 milisegundos entre vibraciones
+                }
+            }
+            // Ejecuta el patrón en el motor del teléfono (Ej: Cara 3 = Vibra, Pausa, Vibra, Pausa, Vibra)
+            navigator.vibrate(patronVibracion);
+        }
+    </script>
+</body>
+</html>
