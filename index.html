@@ -25,6 +25,8 @@
         const CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
         
         let bluetoothDevice = null;
+        let miCaracteristica = null;
+        let temporizadorInactividadWeb = null;
 
         async function conectarDado() {
             try {
@@ -41,7 +43,6 @@
 
             } catch (error) {
                 document.getElementById('estado').innerText = "Estado: Desconectado";
-                // Silenciamos la alerta inicial de cancelación para evitar ventanas molestas
             }
         }
 
@@ -51,38 +52,60 @@
             try {
                 const server = await bluetoothDevice.gatt.connect();
                 const service = await server.getPrimaryService(SERVICE_UUID);
-                const characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+                miCaracteristica = await service.getCharacteristic(CHARACTERISTIC_UUID);
 
                 document.getElementById('estado').innerText = "Estado: ¡CONECTADO Y LISTO!";
                 document.getElementById('resultado').innerText = "0";
 
-                await characteristic.startNotifications();
+                await miCaracteristica.startNotifications();
                 
-                characteristic.addEventListener('characteristicvaluechanged', (event) => {
+                // Inicializamos el vigilante de tiempo para la web
+                resetearTemporizadorInactividad();
+
+                miCaracteristica.addEventListener('characteristicvaluechanged', (event) => {
                     let value = event.target.value;
                     let caraDetectada = value.getUint8(0);
+                    
                     document.getElementById('resultado').innerText = caraDetectada;
+                    
+                    // Cada vez que llega una cara válida, confirmamos que el dado sigue vivo
+                    resetearTemporizadorInactividad();
+                    
                     ejecutarDoblePatron(caraDetectada);
                 });
 
             } catch (error) {
-                document.getElementById('estado').innerText = "Estado: Buscando reconexión...";
-                // CORRECCIÓN: Silenciamos por completo el molesto aviso flotante de GATT
+                console.log("Error en sincronización GATT.");
+                onDisconnected(); // Si falla el canal, forzamos el modo de espera limpia
             }
         }
 
+        // LÓGICA DE DETECCIÓN WEB: Si el dado entra en Modo Fantasma a los 30 segundos,
+        // la web lo nota por falta de datos, se limpia sola y se pone a escanear en silencio.
+        function resetearTemporizadorInactividad() {
+            clearTimeout(temporizadorInactividadWeb);
+            // Si el dado pasa 35 segundos sin enviar nada (5 segundos de tolerancia tras tu límite de 30s)
+            temporizadorInactividadWeb = setTimeout(() => {
+                console.log("Falta de datos detectada. Forzando reconexión silenciosa...");
+                onDisconnected();
+            }, 35000); 
+        }
+
         function onDisconnected() {
-            document.getElementById('estado').innerText = "Estado: Dado dormido. Esperando doble toque...";
+            clearTimeout(temporizadorInactividadWeb);
+            document.getElementById('estado').innerText = "Estado: Dado en reposo. Esperando giro...";
             document.getElementById('resultado').innerText = "--";
             
-            // Intenta reengancharse automáticamente cada 2.5 segundos sin levantar alertas
+            // Ciclo de reenganche automático: se queda escuchando el aire de fondo en tu bolsillo
             setTimeout(function() {
-                iniciarConexionGATT();
-            }, 2500); 
+                if(bluetoothDevice && !bluetoothDevice.gatt.connected) {
+                    iniciarConexionGATT();
+                }
+            }, 2000); 
         }
 
         function ejecutarDoblePatron(cara) {
-            if (!("vibrate" in navigator)) return;
+            if (!("vibrate" in navigator) || cara === 0) return;
 
             let patronIndividual = [];
             for (let i = 0; i < cara; i++) {
